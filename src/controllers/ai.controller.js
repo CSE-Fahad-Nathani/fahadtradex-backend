@@ -1,0 +1,19 @@
+import { getAIAnalysisService } from "../services/ai.service.js";
+
+export const getAIAnalysisController = async (req, res) => {
+  try {
+    const payload = req.body;
+
+    const result = await getAIAnalysisService(payload);
+
+    return res.status(result.statusCode).json(result);
+
+  } catch (error) {
+    console.error("AI CONTROLLER ERROR:", error);
+
+    return res.status(500).json({
+      status: "FAILED",
+      message: "Internal server error"
+    });
+  }
+};
