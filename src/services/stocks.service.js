@@ -1,4 +1,4 @@
-import db from "../config/sqlite.js";
+import pool from "../config/postgres.js";
 import { db as firestore } from "../config/firebase.js";
 import { isMarketOpen } from "./marketStatus.service.js";
 
@@ -10,95 +10,182 @@ const EXCHANGE_MAP = {
 };
 
 
-export const getStockByScrip = ({ scripCode, exch, exchType }) => {
-  return new Promise((resolve, reject) => {
-    const query = `
-      SELECT *
-      FROM stocks
-      WHERE scripCode = ?
-      AND exchange = ?
-      AND exchangeType = ?
-      LIMIT 1
+
+export const getStockByScrip = async ({ scripCode, exch, exchType }) => {
+  const query = `
+    SELECT *
+    FROM stocks
+    WHERE scripcode = $1
+    AND exchange = $2
+    AND exchangetype = $3
+    LIMIT 1
+  `;
+
+  const values = [scripCode, exch, exchType];
+
+  const result = await pool.query(query, values);
+
+  return result.rows[0] || null;
+};
+
+export const searchStocks = async ({ name, exch }) => {
+  if (!name || name.trim().length < 3) {
+    return [];
+  }
+
+  const queryText = name.trim().toLowerCase();
+  const words = queryText.split(/\s+/).filter(Boolean);
+
+  if (!words.length) {
+    return [];
+  }
+
+  let sql = `
+  SELECT
+      id,
+      symbol,
+      name,
+      exchange,
+      exchangetype AS "exchangeType",
+      scripcode AS "scripCode",
+      series,
+      expiry,
+      scriptype AS "scripType",
+      strikerate AS "strikeRate",
+      ticksize AS "tickSize",
+      lotsize AS "lotSize",
+      qtylimit AS "qtyLimit",
+      multiplier,
+      symbolroot AS "symbolRoot",
+      bocoallowed AS "bocoAllowed",
+      isin
+  FROM stocks
+  WHERE 1=1
+  AND (scriptype IS NULL OR scriptype NOT IN ('CE', 'PE'))
+`;
+
+  const values = [];
+  let index = 1;
+
+  words.forEach((word) => {
+    sql += `
+      AND (
+        symbol_lower LIKE $${index}
+        OR name_lower LIKE $${index + 1}
+      )
     `;
 
-    db.get(query, [scripCode, exch, exchType], (err, row) => {
-      if (err) return reject(err);
-      resolve(row || null);
-    });
+    values.push(`%${word}%`, `%${word}%`);
+    index += 2;
   });
+
+  const exchangeCode = EXCHANGE_MAP[exch] ?? null;
+
+  if (exchangeCode) {
+    sql += ` AND exchange = $${index}`; 
+    values.push(exchangeCode);
+    index++;
+  }
+
+  sql += ` LIMIT 50`;
+
+  console.log(sql);
+console.log("values", values);
+
+  const result = await pool.query(sql, values);
+
+  return result.rows;
 };
+
+// export const getStockByScrip = ({ scripCode, exch, exchType }) => {
+//   return new Promise((resolve, reject) => {
+//     const query = `
+//       SELECT *
+//       FROM stocks
+//       WHERE scripCode = ?
+//       AND exchange = ?
+//       AND exchangeType = ?
+//       LIMIT 1
+//     `;
+
+//     db.get(query, [scripCode, exch, exchType], (err, row) => {
+//       if (err) return reject(err);
+//       resolve(row || null);
+//     });
+//   });
+// };
 
 // 🔍 SEARCH STOCKS (existing - unchanged)
-export const searchStocks = ({ name, exch }) => {
-  return new Promise((resolve, reject) => {
-    if (!name || name.trim().length < 3) {
-      return resolve([]);
-    }
+// export const searchStocks = ({ name, exch }) => {
+//   return new Promise((resolve, reject) => {
+//     if (!name || name.trim().length < 3) {
+//       return resolve([]);
+//     }
 
-    const query = name.trim().toLowerCase();
-    const words = query.split(/\s+/).filter(Boolean);
+//     const query = name.trim().toLowerCase();
+//     const words = query.split(/\s+/).filter(Boolean);
 
-    if (!words.length) {
-      return resolve([]);
-    }
+//     if (!words.length) {
+//       return resolve([]);
+//     }
 
-    let sql = `
-      SELECT 
-        id,
-        symbol,
-        name,
-        exchange,
-        exchangeType,
-        scripCode,
-        series,
+//     let sql = `
+//       SELECT 
+//         id,
+//         symbol,
+//         name,
+//         exchange,
+//         exchangeType,
+//         scripCode,
+//         series,
 
-        -- ✅ Added (matching your DB exactly)
-        expiry,
-        scripType,
-        strikeRate,
-        tickSize,
-        lotSize,
-        qtyLimit,
-        multiplier,
-        symbolRoot,
-        bocoAllowed,
-        isin
+//         -- ✅ Added (matching your DB exactly)
+//         expiry,
+//         scripType,
+//         strikeRate,
+//         tickSize,
+//         lotSize,
+//         qtyLimit,
+//         multiplier,
+//         symbolRoot,
+//         bocoAllowed,
+//         isin
 
-      FROM stocks
-      WHERE 1=1
-      AND (scripType IS NULL OR scripType NOT IN ('CE', 'PE'))
-    `;
+//       FROM stocks
+//       WHERE 1=1
+//       AND (scripType IS NULL OR scripType NOT IN ('CE', 'PE'))
+//     `;
 
-    const params = [];
+//     const params = [];
 
-    // Ensure every typed word is present in symbol or name.
-    words.forEach((word) => {
-      sql += `
-        AND (
-          symbol_lower LIKE ?
-          OR name_lower LIKE ?
-        )
-      `;
-      params.push(`%${word}%`, `%${word}%`);
-    });
+//     // Ensure every typed word is present in symbol or name.
+//     words.forEach((word) => {
+//       sql += `
+//         AND (
+//           symbol_lower LIKE ?
+//           OR name_lower LIKE ?
+//         )
+//       `;
+//       params.push(`%${word}%`, `%${word}%`);
+//     });
 
-    const exchangeCode = EXCHANGE_MAP[exch] ?? null;
+//     const exchangeCode = EXCHANGE_MAP[exch] ?? null;
 
-    if (exchangeCode) {
-      sql += ` AND exchange = ?`;
-      params.push(exchangeCode);
-    }
+//     if (exchangeCode) {
+//       sql += ` AND exchange = ?`;
+//       params.push(exchangeCode);
+//     }
 
-    sql += ` LIMIT 50`;
+//     sql += ` LIMIT 50`;
 
-    db.all(sql, params, (err, rows) => {
-      if (err) {
-        return reject(err);
-      }
-      resolve(rows);
-    });
-  });
-};
+//     db.all(sql, params, (err, rows) => {
+//       if (err) {
+//         return reject(err);
+//       }
+//       resolve(rows);
+//     });
+//   });
+// };
 
 
 

@@ -1,5 +1,15 @@
-import { searchStocks, buyStockService } from "../services/stocks.service.js";
-import { getStockByScrip } from "../services/stocks.service.js";
+// import {  buyStockService } from "../services/stocks.service.js";
+// import { getStockByScrip } from "../services/stocks.service.js";
+import {
+  searchStocks,
+  buyStockService,
+  getStockByScrip
+} from "../services/stocks.service.js";
+
+
+
+
+
 
 // 🔍 SEARCH STOCKS (existing)
 export const searchStocksController = async (req, res) => {
@@ -90,7 +100,7 @@ export const buyStockController = async (req, res) => {
       if (!payload.lots || !payload.multiplier) {
         return res.status(400).json({
           status: "FAILED",
-          message: "Missing lots or multiplier for MCX"
+          message: "Missing lots or multiplier for MCX" 
         });
       }
     } else {
