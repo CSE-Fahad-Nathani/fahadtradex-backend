@@ -1,6 +1,5 @@
-export const isMarketOpen = async (exch) => {
+export const fetchMarketStatus = async () => {
 
-  // Current IST time
   const now = new Date();
 
   const ist = new Date(
@@ -9,37 +8,53 @@ export const isMarketOpen = async (exch) => {
     })
   );
 
-  const day = ist.getDay(); // 0 = Sunday, 6 = Saturday
-
-  // Weekend check
-  if (day === 0 || day === 6) {
-    return false;
-  }
+  const day = ist.getDay(); // 0=Sunday, 6=Saturday
 
   const currentMinutes =
     ist.getHours() * 60 + ist.getMinutes();
 
+  // Weekend
+  const isWeekend = day === 0 || day === 6;
+
+  // NSE / BSE
+  const capitalMarketOpen =
+    !isWeekend &&
+    currentMinutes >= (9 * 60 + 15) &&
+    currentMinutes <= (15 * 60 + 30);
+
+  // MCX
+  const commodityMarketOpen =
+    !isWeekend &&
+    currentMinutes >= (9 * 60) &&
+    currentMinutes <= (23 * 60 + 30);
+
+  return {
+    "Capital Market": {
+      marketStatus: capitalMarketOpen ? "Open" : "Closed",
+    },
+    "Commodity": {
+      marketStatus: commodityMarketOpen ? "Open" : "Closed",
+    },
+  };
+};
+
+export const isMarketOpen = async (exch) => {
+
+  const result = await fetchMarketStatus();
+
   // NSE / BSE
   if (exch === "N" || exch === "B") {
 
-    const marketOpen = 9 * 60 + 15; // 09:15 AM
-    const marketClose = 15 * 60 + 30; // 03:30 PM
-
     return (
-      currentMinutes >= marketOpen &&
-      currentMinutes <= marketClose
+      result["Capital Market"]?.marketStatus === "Open"
     );
   }
 
   // MCX
   if (exch === "M") {
 
-    const marketOpen = 9 * 60; // 09:00 AM
-    const marketClose = 23 * 60 + 30; // 11:30 PM
-
     return (
-      currentMinutes >= marketOpen &&
-      currentMinutes <= marketClose
+      result["Commodity"]?.marketStatus === "Open"
     );
   }
 
