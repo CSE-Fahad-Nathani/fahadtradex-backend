@@ -1,53 +1,45 @@
-import fetch from "node-fetch";
-
-export const fetchMarketStatus = async () => {
-  const url = "https://www.nseindia.com/api/marketStatus";
-
-  const response = await fetch(url, {
-    method: "GET",
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      Accept: "application/json",
-      Referer: "https://www.nseindia.com/",
-    },
-  });
-
-  const data = await response.json();
-
-  const marketState = data?.marketState || [];
-
-  // 🎯 Extract only required markets
-  const capitalMarket = marketState.find(
-    (m) => m.market === "Capital Market"
-  );
-
-  const commodityMarket = marketState.find(
-    (m) => m.market === "Commodity"
-  );
-
-  return {
-    "Capital Market": capitalMarket || {},
-    "Commodity": commodityMarket || {},
-  };
-};
-
 export const isMarketOpen = async (exch) => {
 
-  const result = await fetchMarketStatus();
+  // Current IST time
+  const now = new Date();
+
+  const ist = new Date(
+    now.toLocaleString("en-US", {
+      timeZone: "Asia/Kolkata",
+    })
+  );
+
+  const day = ist.getDay(); // 0 = Sunday, 6 = Saturday
+
+  // Weekend check
+  if (day === 0 || day === 6) {
+    return false;
+  }
+
+  const currentMinutes =
+    ist.getHours() * 60 + ist.getMinutes();
 
   // NSE / BSE
   if (exch === "N" || exch === "B") {
 
+    const marketOpen = 9 * 60 + 15; // 09:15 AM
+    const marketClose = 15 * 60 + 30; // 03:30 PM
+
     return (
-      result["Capital Market"]?.marketStatus === "Open"
+      currentMinutes >= marketOpen &&
+      currentMinutes <= marketClose
     );
   }
 
   // MCX
   if (exch === "M") {
 
+    const marketOpen = 9 * 60; // 09:00 AM
+    const marketClose = 23 * 60 + 30; // 11:30 PM
+
     return (
-      result["Commodity"]?.marketStatus === "Open"
+      currentMinutes >= marketOpen &&
+      currentMinutes <= marketClose
     );
   }
 
