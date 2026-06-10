@@ -2,9 +2,16 @@ import { getAIAnalysisService } from "../services/ai.service.js";
 
 export const getAIAnalysisController = async (req, res) => {
   try {
-    const payload = req.body;
+    const { name, exchange, snapshot } = req.body;
 
-    const result = await getAIAnalysisService(payload);
+    if (!snapshot || typeof snapshot !== "object") {
+      return res.status(400).json({
+        status: "FAILED",
+        message: "Market snapshot data is required",
+      });
+    }
+
+    const result = await getAIAnalysisService({ name, exchange, snapshot });
 
     return res.status(result.statusCode).json(result);
 
