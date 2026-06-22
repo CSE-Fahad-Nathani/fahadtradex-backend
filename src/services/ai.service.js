@@ -108,7 +108,7 @@ Rules:
     const response = await axios.post(
       "https://api.groq.com/openai/v1/responses",
       {
-        model: "openai/gpt-oss-20b",
+        model: "llama-3.1-8b-instant",
         input: content,
       },
       {

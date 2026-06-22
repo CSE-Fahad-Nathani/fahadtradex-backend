@@ -318,18 +318,27 @@ export const buyStockService = async ({ userId, payload }) => {
 
         if (isMCX) {
           const newLots = (existing.lots || 0) + lots;
-
+        
+          const newInvested = Number(
+            ((existing.investedValue || 0) + totalCost).toFixed(2)
+          );
+        
+          const newAvg = Number(
+            (
+              newInvested /
+              (0.15 * multiplier * newLots)
+            ).toFixed(2)
+          );
+        
           transaction.update(portfolioRef, {
             lots: newLots,
             multiplier,
-            avgPrice: Number(LTP.toFixed(2)),
-            investedValue: Number(
-              (existing.investedValue + totalCost).toFixed(2)
-            ),
+            avgPrice: newAvg,
+            investedValue: newInvested,
             tradeDate,
             addedAt
           });
-
+        
         } else {
           const newQty = existing.totalQty + Quantity;
 
