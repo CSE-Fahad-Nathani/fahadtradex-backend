@@ -24,6 +24,10 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+app.get("/test", (req, res) => {
+  res.json({ success: true, message: "Server is running" });
+});
+
 app.use("/api/stocks", stocksRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/user", userRoutes);
