@@ -2,7 +2,7 @@ import { getAIAnalysisService } from "../services/ai.service.js";
 
 export const getAIAnalysisController = async (req, res) => {
   try {
-    const { name, exchange, snapshot } = req.body;
+    const { name, exchange, snapshot, candles, timeframe } = req.body;
 
     if (!snapshot || typeof snapshot !== "object") {
       return res.status(400).json({
@@ -11,7 +11,7 @@ export const getAIAnalysisController = async (req, res) => {
       });
     }
 
-    const result = await getAIAnalysisService({ name, exchange, snapshot });
+    const result = await getAIAnalysisService({ name, exchange, snapshot, candles, timeframe });
 
     return res.status(result.statusCode).json(result);
 

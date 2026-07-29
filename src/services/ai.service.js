@@ -33,9 +33,54 @@ const formatSnapshotForPrompt = (snapshot = {}) => {
     .join("\n");
 };
 
+const formatCandlesForPrompt = (candles = [], timeframe = "60m") => {
+  if (!Array.isArray(candles) || candles.length === 0) {
+    return "No historical candle data available.";
+  }
+
+  const rows = candles
+    .map((c) => {
+      if (!Array.isArray(c) || c.length < 5) return null;
+      const [timestamp, open, high, low, close, volume] = c;
+      const volumeText = volume != null ? `, volume: ${volume}` : "";
+      return `- ${timestamp} | open: ${open}, high: ${high}, low: ${low}, close: ${close}${volumeText}`;
+    })
+    .filter(Boolean);
+
+  if (!rows.length) {
+    return "No historical candle data available.";
+  }
+
+  const closes = candles.map((c) => Number(c[4])).filter(Number.isFinite);
+  const highs = candles.map((c) => Number(c[2])).filter(Number.isFinite);
+  const lows = candles.map((c) => Number(c[3])).filter(Number.isFinite);
+  const volumes = candles.map((c) => Number(c[5])).filter(Number.isFinite);
+
+  const periodHigh = highs.length ? Math.max(...highs) : "N/A";
+  const periodLow = lows.length ? Math.min(...lows) : "N/A";
+  const firstClose = closes.length ? closes[0] : "N/A";
+  const lastClose = closes.length ? closes[closes.length - 1] : "N/A";
+  const avgVolume = volumes.length
+    ? Math.round(volumes.reduce((sum, v) => sum + v, 0) / volumes.length)
+    : "N/A";
+
+  return `
+Timeframe: ${timeframe}
+Candle count: ${rows.length}
+Period high: ${periodHigh}
+Period low: ${periodLow}
+First close: ${firstClose}
+Last close: ${lastClose}
+Average volume: ${avgVolume}
+
+Each candle row format: timestamp | open, high, low, close, volume
+${rows.join("\n")}
+`.trim();
+};
+
 export const getAIAnalysisService = async (payload) => {
   try {
-    const { name = "N/A", exchange = "N/A", snapshot = {} } = payload;
+    const { name = "N/A", exchange = "N/A", snapshot = {}, candles = [], timeframe = "60m" } = payload;
 
     const pClose = Number(snapshot.PClose);
     const netChange = Number(snapshot.NetChange);
@@ -54,6 +99,9 @@ Stock Data:
 
 Market Snapshot:
 ${formatSnapshotForPrompt(snapshot)}
+
+Historical Candle Data (recent price movement):
+${formatCandlesForPrompt(candles, timeframe)}
 
 ${isMCX ? `
 Important:
@@ -77,10 +125,12 @@ Return STRICT JSON ONLY in this format:
 Rules:
 - Short term = intraday / few days
 - Long term = months / investment view
+- Use the historical candle data to understand recent price movement, highs/lows, and trading activity
+- If recent candles show sharp rises or falls, mention that in your reasoning
 - If stock is near 52-week high, avoid aggressive short-term BUY
 
 - The reason MUST be 3-5 complete sentences.
-- Explain the recommendation using only the data provided above.
+- Explain the recommendation using the snapshot and historical candle data provided above.
 - Do not guess future price movements.
 - Do not claim the stock will go up or down.
 - Do not make predictions about future returns.
