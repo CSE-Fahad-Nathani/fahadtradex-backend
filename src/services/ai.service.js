@@ -38,44 +38,153 @@ const formatCandlesForPrompt = (candles = [], timeframe = "60m") => {
     return "No historical candle data available.";
   }
 
-  const rows = candles
+  const parsed = candles
     .map((c) => {
       if (!Array.isArray(c) || c.length < 5) return null;
       const [timestamp, open, high, low, close, volume] = c;
-      const volumeText = volume != null ? `, volume: ${volume}` : "";
-      return `- ${timestamp} | open: ${open}, high: ${high}, low: ${low}, close: ${close}${volumeText}`;
+      return {
+        timestamp,
+        date: String(timestamp).slice(0, 10),
+        open: Number(open),
+        high: Number(high),
+        low: Number(low),
+        close: Number(close),
+        volume: volume != null ? Number(volume) : null,
+      };
     })
     .filter(Boolean);
 
-  if (!rows.length) {
+  if (!parsed.length) {
     return "No historical candle data available.";
   }
 
-  const closes = candles.map((c) => Number(c[4])).filter(Number.isFinite);
-  const highs = candles.map((c) => Number(c[2])).filter(Number.isFinite);
-  const lows = candles.map((c) => Number(c[3])).filter(Number.isFinite);
-  const volumes = candles.map((c) => Number(c[5])).filter(Number.isFinite);
+  const closes = parsed.map((c) => c.close).filter(Number.isFinite);
+  const highs = parsed.map((c) => c.high).filter(Number.isFinite);
+  const lows = parsed.map((c) => c.low).filter(Number.isFinite);
+  const volumes = parsed.map((c) => c.volume).filter(Number.isFinite);
 
   const periodHigh = highs.length ? Math.max(...highs) : "N/A";
   const periodLow = lows.length ? Math.min(...lows) : "N/A";
   const firstClose = closes.length ? closes[0] : "N/A";
   const lastClose = closes.length ? closes[closes.length - 1] : "N/A";
+  const periodChangePct =
+    closes.length > 1 && closes[0]
+      ? (((closes[closes.length - 1] - closes[0]) / closes[0]) * 100).toFixed(2)
+      : "N/A";
   const avgVolume = volumes.length
     ? Math.round(volumes.reduce((sum, v) => sum + v, 0) / volumes.length)
     : "N/A";
 
+  const dailyMap = new Map();
+  parsed.forEach((c) => {
+    dailyMap.set(c.date, c);
+  });
+  const dailyRows = Array.from(dailyMap.values())
+    .slice(-15)
+    .map((c) => `${c.date}: close ${c.close}, volume ${c.volume ?? "N/A"}`);
+
+  const recentRows = parsed
+    .slice(-12)
+    .map((c) => `${c.timestamp}: O ${c.open} H ${c.high} L ${c.low} C ${c.close} V ${c.volume ?? "N/A"}`);
+
   return `
 Timeframe: ${timeframe}
-Candle count: ${rows.length}
+Total candles: ${parsed.length}
 Period high: ${periodHigh}
 Period low: ${periodLow}
 First close: ${firstClose}
 Last close: ${lastClose}
+Period change %: ${periodChangePct}
 Average volume: ${avgVolume}
 
-Each candle row format: timestamp | open, high, low, close, volume
-${rows.join("\n")}
+Daily summary (most recent ${dailyRows.length} trading days):
+${dailyRows.join("\n")}
+
+Most recent ${recentRows.length} candles:
+${recentRows.join("\n")}
 `.trim();
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const SHORT_TERM_OPTIONS = ["STRONG BUY", "BUY", "HOLD", "AVOID", "SELL"];
+const LONG_TERM_OPTIONS = ["STRONG BUY", "BUY", "HOLD", "SELL"];
+const CONFIDENCE_OPTIONS = ["VERY LOW", "LOW", "MEDIUM", "HIGH", "VERY HIGH"];
+
+const normalizeChoice = (value, allowed) => {
+  if (value == null) return allowed.includes("HOLD") ? "HOLD" : allowed[0];
+
+  const raw = String(value).trim().toUpperCase();
+  if (!raw) return allowed.includes("HOLD") ? "HOLD" : allowed[0];
+
+  // Exact match
+  if (allowed.includes(raw)) return raw;
+
+  // Model sometimes returns "SELL | AVOID | BUY" — pick the first valid option
+  const parts = raw
+    .split("|")
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  for (const part of parts) {
+    if (allowed.includes(part)) return part;
+  }
+
+  // Fuzzy: find first allowed option that appears as a whole token in the string
+  for (const option of allowed) {
+    const re = new RegExp(`(?:^|[^A-Z])${option.replace(/\s+/g, "\\s+")}(?:[^A-Z]|$)`);
+    if (re.test(raw)) return option;
+  }
+
+  return allowed.includes("HOLD") ? "HOLD" : allowed[0];
+};
+
+const sanitizeAIAnalysis = (parsed) => {
+  if (!parsed || typeof parsed !== "object" || parsed.error) return parsed;
+
+  return {
+    ...parsed,
+    short_term: normalizeChoice(parsed.short_term, SHORT_TERM_OPTIONS),
+    long_term: normalizeChoice(parsed.long_term, LONG_TERM_OPTIONS),
+    confidence: normalizeChoice(parsed.confidence, CONFIDENCE_OPTIONS),
+    reason: typeof parsed.reason === "string" ? parsed.reason.trim() : parsed.reason,
+  };
+};
+
+const callGroq = async (content, retries = 2) => {
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const response = await axios.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        {
+          model: "llama-3.1-8b-instant",
+          messages: [{ role: "user", content }],
+          temperature: 0.3,
+          max_tokens: 300,
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      return response.data?.choices?.[0]?.message?.content || "";
+    } catch (error) {
+      const groqError = error?.response?.data?.error;
+      const isRateLimited = groqError?.code === "rate_limit_exceeded";
+      const canRetry = attempt < retries && isRateLimited;
+
+      if (!canRetry) throw error;
+
+      const retryMatch = groqError?.message?.match(/try again in ([\d.]+)s/i);
+      const waitMs = retryMatch ? Math.ceil(Number(retryMatch[1]) * 1000) + 500 : 3000;
+      await sleep(waitMs);
+    }
+  }
+
+  return "";
 };
 
 export const getAIAnalysisService = async (payload) => {
@@ -116,13 +225,20 @@ Important:
 Return STRICT JSON ONLY in this format:
 
 {
-  "short_term": "STRONG BUY | BUY | HOLD | AVOID | SELL",
-  "long_term": "STRONG BUY | BUY | HOLD | SELL",
-  "confidence": "VERY LOW | LOW | MEDIUM | HIGH | VERY HIGH",
+  "short_term": "HOLD",
+  "long_term": "HOLD",
+  "confidence": "MEDIUM",
   "reason": "Detailed beginner-friendly explanation"
 }
 
-Rules:
+Field rules (CRITICAL):
+- short_term MUST be exactly ONE of these values: "STRONG BUY", "BUY", "HOLD", "AVOID", "SELL"
+- long_term MUST be exactly ONE of these values: "STRONG BUY", "BUY", "HOLD", "SELL"
+- confidence MUST be exactly ONE of these values: "VERY LOW", "LOW", "MEDIUM", "HIGH", "VERY HIGH"
+- Never return multiple options joined by "|", commas, or any other separator.
+- Never list alternatives. Pick a single final decision for each field.
+
+Analysis rules:
 - Short term = intraday / few days
 - Long term = months / investment view
 - Use the historical candle data to understand recent price movement, highs/lows, and trading activity
@@ -155,29 +271,14 @@ Rules:
 - Only JSON.
 `;
 
-    const response = await axios.post(
-      "https://api.groq.com/openai/v1/responses",
-      {
-        model: "llama-3.1-8b-instant",
-        input: content,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    const response = await callGroq(content);
 
-    const raw =
-      response.data?.output
-        ?.find((item) => item.type === "message")
-        ?.content?.find((c) => c.type === "output_text")
-        ?.text || "";
+    const raw = response;
 
     let parsed;
     try {
       parsed = JSON.parse(raw.replace(/```json|```/g, "").trim());
+      parsed = sanitizeAIAnalysis(parsed);
     } catch {
       parsed = {
         error: "Invalid JSON from AI",
@@ -191,7 +292,16 @@ Rules:
       data: parsed,
     };
   } catch (error) {
-    console.error("AI SERVICE ERROR:", error?.response?.data || error.message);
+    const groqError = error?.response?.data?.error;
+    console.error("AI SERVICE ERROR:", groqError || error.message);
+
+    if (groqError?.code === "rate_limit_exceeded") {
+      return {
+        statusCode: 429,
+        status: "FAILED",
+        message: "AI service is busy. Please try again in a moment.",
+      };
+    }
 
     return {
       statusCode: 500,
