@@ -14,6 +14,7 @@ import nseRoutes from "./routes/nse.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
 import targetRoutes from "./routes/target.routes.js";
 import marketStatusRoutes from "./routes/marketStatus.routes.js";
+import paymentRoutes from "./routes/payment.routes.js";
 
 
 
@@ -41,6 +42,7 @@ app.use("/api/nse", nseRoutes);
 app.use("/api/ai", aiRoutes);
 app.use("/api/v1/targets", targetRoutes);
 app.use("/api/market", marketStatusRoutes);
+app.use("/api/payment", paymentRoutes);
 
 
 
