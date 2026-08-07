@@ -1,12 +1,39 @@
-// import {  buyStockService } from "../services/stocks.service.js";
-// import { getStockByScrip } from "../services/stocks.service.js";
 import {
   searchStocks,
   buyStockService,
   getStockByScrip
 } from "../services/stocks.service.js";
+import { sendTradeConfirmationEmail } from "../services/email.service.js";
 
-
+const sendTradeEmailSafe = async ({ email, trade }) => {
+  try {
+    if (!email) {
+      console.warn("TRADE EMAIL skipped: no recipient email on request/JWT");
+      return;
+    }
+    if (!trade) {
+      console.warn("TRADE EMAIL skipped: missing trade data");
+      return;
+    }
+    const result = await sendTradeConfirmationEmail({
+      to: email,
+      type: trade.type,
+      name: trade.name,
+      symbol: trade.symbol,
+      exch: trade.exch,
+      price: trade.price,
+      quantity: trade.quantity,
+      lots: trade.lots,
+      totalValue: trade.totalValue,
+      pnl: trade.pnl,
+    });
+    if (result?.success) {
+      console.log(`TRADE EMAIL sent: ${trade.type} → ${email}`);
+    }
+  } catch (err) {
+    console.error("TRADE EMAIL SAFE WRAPPER ERROR:", err?.message || err);
+  }
+};
 
 
 
@@ -124,6 +151,11 @@ export const buyStockController = async (req, res) => {
       payload
     });
 
+    if (result?.status === "SUCCESS") {
+      const email = payload.email || req.user?.email;
+      sendTradeEmailSafe({ email, trade: result.data });
+    }
+
     return res.status(result.statusCode).json(result);
 
   } catch (error) {
@@ -187,6 +219,11 @@ export const sellStockController = async (req, res) => {
       userId,
       payload
     });
+
+    if (result?.status === "SUCCESS") {
+      const email = payload.email || req.user?.email;
+      sendTradeEmailSafe({ email, trade: result.data });
+    }
 
     return res.status(result.statusCode).json(result);
 

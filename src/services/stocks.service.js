@@ -384,7 +384,18 @@ export const buyStockService = async ({ userId, payload }) => {
       return {
         statusCode: 200,
         status: "SUCCESS",
-        message: "Order placed successfully"
+        message: "Order placed successfully",
+        data: {
+          type: "BUY",
+          symbol,
+          name,
+          price: Number(LTP.toFixed(2)),
+          quantity: isMCX ? null : Quantity,
+          lots: isMCX ? lots : null,
+          totalValue: totalCost,
+          exch: Exch,
+          pnl: 0,
+        },
       };
 
     });
@@ -597,7 +608,18 @@ export const sellStockService = async ({ userId, payload }) => {
       return {
         statusCode: 200,
         status: "SUCCESS",
-        message: "Order placed successfully"
+        message: "Order placed successfully",
+        data: {
+          type: "SELL",
+          symbol,
+          name,
+          price: Number(LTP),
+          quantity: isMCX ? null : Quantity,
+          lots: isMCX ? lots : null,
+          totalValue: sellValue,
+          exch: Exch,
+          pnl: Number(pnl.toFixed(2)),
+        },
       };
 
     });
